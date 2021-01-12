@@ -9,14 +9,14 @@
 #define PROC_ROOT "/proc"
 void trim(char *str) 
 {
-  char *end = str;
-  while(isspace((unsigned char)*end)) end++; 
-  str = strcpy(str, end);
+    char *end = str;
+    while(isspace((unsigned char)*end)) end++; 
+    str = strcpy(str, end);
 
-  end = str + strlen(str) - 1;
-  while(end > str && isspace((unsigned char)*end)) end--;
+    end = str + strlen(str) - 1;
+    while(end > str && isspace((unsigned char)*end)) end--;
 
-  end[1] = '\0';
+    end[1] = '\0';
 }
 
 struct tree_node {
@@ -24,14 +24,13 @@ struct tree_node {
     char state[128];
     pid_t pid;
     pid_t ppid;
+    int childCount; 
     struct tree_node* parent;
     struct tree_node* children[256];
-    struct tree_node* next; // this is just to help us build the tree
-    int childCount = 0;
-    // use use *next as a list
+    struct tree_node* next; // this is just to help us build the tree, use use *next as a list
 };
 
-static struct tree_node * p_head = NULL;
+static struct tree_node* p_head = NULL;
 
 int parse_process(char *dirname) 
 {
@@ -95,34 +94,88 @@ void build_tree(struct tree_node* source)
     source = father;
 }
 
-void show_tree (struct tree_node *node, int padding, int index)
-{
+void show_tree (struct tree_node *node, int padding, int index, int u)
+{       
+    //┬ ├ │└ ─
+    int array[1024] = { [ 0 ... 1023 ] = 0 };
+    int array1[1024] = { [ 0 ... 1023 ] = 0 };
+    int ind=0;
+
     // First we print
     if (node -> ppid != -1) {
         if (padding == 0) {
-            printf("%s %d:%d", node->name, node->ppid, node->pid);
+            printf("%s─%d:%d", node->name, node->ppid, node->pid);
         } else {
-            printf("%*c", padding, ' ');
-            printf(" - %s %d:%d", node->name, node->ppid, node->pid);
+            // finding out the distances and if we need │
+            struct tree_node *current=node;
+            while (current->parent != NULL)
+            {
+                current = current->parent;
+                if (current->childCount > index)
+                {
+                    while (current->parent != NULL)
+                    {
+                        if (!(current == current->parent->children[current->parent->childCount - 1])) {
+                            array1[ind]=1;
+                        }
+                        array[ind++] = strlen(current->name) + 2;
+                        current = current->parent;
+                    }
+                }
+                else
+                {
+                    array[ind++] = 0;
+                }               
+            }  
+            // printing the spaces
+            int sum=0;
+            for (int j = ind - 1; j >= 0; j--)
+                if (array1[j - 1] == 1 && j > 0) {
+                    printf("%*c│", array[j], ' ');
+                } else {
+                    printf("%*c", array[j], ' ');
+                }
+            // here we print the processes
+            if (node->childCount > 0)
+            {
+                if (u == 1) {
+                    printf("└─%s⌄  %s %d:%d", node->name, node->state, node->ppid, node->pid);
+                } else {
+                    printf("├─%s⌄  %s %d:%d", node->name, node->state, node->ppid, node->pid);
+                }
+            } else {
+                if (u == 1) {
+                    printf("└─%s  %s %d:%d", node->name, node->state, node->ppid, node->pid);
+                }
+                else {
+                    printf("├─%s  %s %d:%d", node->name, node->state, node->ppid, node->pid);
+                }
+            }
         }
         printf("\n");
     }
-    // then we call the children
-    // if (node->childCount == 0) {
-    //     printf("\n");
-    // } else 
+    // the dfs going through the nodes
     if(node -> ppid == -1) {
         for(int i = 0; i < node->childCount; ++i) {
-            show_tree(node->children[i], 0, 0);
+            if (i == node->childCount - 1) {
+                show_tree(node->children[i], 0, 0, 1);
+            }
+            else {
+                show_tree(node->children[i], 0, 0, 0);
+            }
         }
     } else {
+        int cop=0;
         for(int i = 0; i < node->childCount; ++i) {
             int newPadding = padding;
-            if (padding != 0) {
-                newPadding += 3;
+            cop++;
+
+            newPadding += strlen(node->name)+2;
+            if (i == node->childCount - 1) {
+                show_tree(node->children[i], newPadding, i, 1);
+            } else {
+                show_tree(node->children[i], newPadding, i, 0);
             }
-            newPadding += strlen(node->name);
-            show_tree(node->children[i], newPadding, i);
         }
     }
 }
@@ -141,7 +194,7 @@ int main(int argc, char **argv)
     base->pid = 0;
     base->ppid = -1;
     p_head = base;
-
+    // Reading the processes's files
     do {
         if ((dir_entry = readdir(p_dir)) != NULL) {
             if (dir_entry->d_type == DT_DIR) {
@@ -153,13 +206,13 @@ int main(int argc, char **argv)
         }
     } while (dir_entry != NULL);
 
-    // now we make the tree and print it;
-    //while (p_head != NULL) {
-    //    printf("Name: %s\n", p_head->name);
-    //    p_head = p_head->next;
-    //}
+    // building the tree
     build_tree(p_head);
     p_head = base;
-    show_tree(p_head, 0, 0);
+
+    // printing the tree
+    show_tree(p_head, 0, 0, 0);
     return 0;
 }
+
+
